@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Estimador de Peso Bovino - Realidade Aumentada</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #app-container {
+            position: relative;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #camera-wrapper {
+            position: relative;
+            flex: 1;
+            background: #000;
+            overflow: hidden;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Elementos de Realidade Aumentada */
+        #ar-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .ar-guide {
+            position: absolute;
+            border: 3px solid #34d399; /* Green 400 */
+            box-shadow: 0 0 15px rgba(52, 211, 153, 0.5);
+            transition: transform 0.1s cubic-bezier(0.17, 0.67, 0.83, 0.67);
+            border-radius: 4px;
+        }
+
+        .ar-line {
+            position: absolute;
+            background: #34d399;
+        }
+
+        .ar-label {
+            position: absolute;
+            background: #34d399;
+            color: #064e3b;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 99px;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        /* Painel de Controle UI */
+        .ui-panel {
+            background: rgba(24, 24, 27, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 24px;
+            border-top: 1px solid #3f3f46;
+            z-index: 50;
+        }
+
+        input[type=range] {
+            width: 100%;
+            height: 6px;
+            background: #3f3f46;
+            border-radius: 5px;
+            appearance: none;
+            accent-color: #10b981;
+        }
+
+        .pulse {
+            animation: pulse-animation 2s infinite;
+        }
+
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0px rgba(52, 211, 153, 0.4); }
+            100% { box-shadow: 0 0 0 15px rgba(52, 211, 153, 0); }
+        }
+
+        .version-tag {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #10b981;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #10b981;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* Botão Central de Permissão */
+        #permission-prompt {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 101;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            background: rgba(0,0,0,0.85);
+            padding: 30px;
+            border-radius: 20px;
+            border: 1px solid #3f3f46;
+            width: 80%;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <div class="version-tag">v2.0.2 (Botão Manual)</div>
+
+        <div id="camera-wrapper">
+            <!-- Botão de Permissão Manual (Visível inicialmente) -->
+            <div id="permission-prompt">
+                <div class="text-emerald-400 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </div>
+                <h3 class="font-bold mb-2">Acesso à Câmera</h3>
+                <p class="text-xs text-gray-400 mb-6">Para estimar o peso, precisamos acessar a câmera do seu smartphone.</p>
+                <button id="btn-request-permission" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-emerald-900/20">
+                    Ativar Câmera
+                </button>
+            </div>
+
+            <video id="camera-feed" autoplay playsinline muted></video>
+            
+            <div id="ar-overlay">
+                <div id="guide-len" class="ar-guide pulse">
+                    <span class="ar-label" style="top: -24px; left: 50%; transform: translateX(-50%);">Comprimento</span>
+                    <div id="guide-pt" class="ar-line" style="width: 4px; height: 100%; left: 30%; top: 0;">
+                        <span class="ar-label" style="bottom: -24px; left: 50%; transform: translateX(-50%);">Tórax</span>
+                    </div>
+                </div>
+                <div class="w-4 h-4 border-2 border-white/50 rounded-full absolute"></div>
+            </div>
+
+            <div id="instruction" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-2 rounded-full text-xs text-white border border-white/10 z-10 transition-opacity opacity-0">
+                Ajuste a escala
+            </div>
+        </div>
+
+        <div class="ui-panel">
+            <div class="flex items-end justify-between mb-6">
+                <div>
+                    <h2 class="text-gray-400 text-xs font-bold tracking-widest uppercase">Estimativa de Peso</h2>
+                    <div id="weight-display" class="text-4xl font-black text-emerald-400">--- <span class="text-xl">kg</span></div>
+                </div>
+                <div class="text-right">
+                    <div id="arroba-display" class="text-xl font-bold text-white">-- @</div>
+                    <span class="text-[10px] text-gray-500 font-medium">RENDIMENTO ESTIMADO</span>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div>
+                    <div class="flex justify-between text-xs mb-2">
+                        <span class="text-gray-400 uppercase font-bold">Ajuste de Profundidade (AR)</span>
+                        <span id="dist-val" class="text-emerald-400">3.0m</span>
+                    </div>
+                    <input type="range" id="depth-slider" min="1.5" max="6.0" step="0.1" value="3.0">
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="btn-camera-flip" class="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-bold py-3 rounded-xl transition">
+                        Girar Câmera
+                    </button>
+                    <button onclick="window.location.reload()" class="w-12 bg-zinc-800 flex items-center justify-center rounded-xl">
+                        🔄
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('camera-feed');
+        const depthSlider = document.getElementById('depth-slider');
+        const distVal = document.getElementById('dist-val');
+        const weightDisplay = document.getElementById('weight-display');
+        const arrobaDisplay = document.getElementById('arroba-display');
+        const guideLen = document.getElementById('guide-len');
+        const btnCameraFlip = document.getElementById('btn-camera-flip');
+        const instruction = document.getElementById('instruction');
+        const permissionPrompt = document.getElementById('permission-prompt');
+        const btnRequestPermission = document.getElementById('btn-request-permission');
+
+        let currentStream;
+        let useFrontCamera = false;
+        const CONSTANTE_RACA = 450; 
+
+        async function initCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(t => t.stop());
+            }
+            
+            const constraints = {
+                video: { 
+                    facingMode: useFrontCamera ? "user" : "environment",
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                },
+                audio: false
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // Esconde o prompt e mostra as instruções
+                    permissionPrompt.style.display = 'none';
+                    instruction.classList.remove('opacity-0');
+                    instruction.innerText = "Câmera conectada. Alinhe o animal.";
+                };
+
+            } catch (err) {
+                console.error("Camera Error:", err);
+                permissionPrompt.style.display = 'flex';
+                
+                if (err.name === 'NotAllowedError') {
+                    instruction.innerText = "Permissão negada.";
+                } else {
+                    instruction.innerText = "Erro: Verifique se está usando HTTPS.";
+                }
+            }
+        }
+
+        function calculateWeight() {
+            const distance = parseFloat(depthSlider.value);
+            distVal.innerText = distance.toFixed(1) + "m";
+
+            const visualScale = 600 / distance; 
+            guideLen.style.width = `${visualScale}px`;
+            guideLen.style.height = `${visualScale / 2.2}px`;
+
+            const realC_cm = visualScale * (distance * 0.15); 
+            const realPT_cm = (visualScale / 2) * (distance * 0.22); 
+
+            let pesoKg = (Math.pow(realPT_cm, 2) * realC_cm) / CONSTANTE_RACA;
+            if(pesoKg < 50) pesoKg = 0;
+            const arrobas = pesoKg / 30;
+
+            weightDisplay.innerHTML = `${Math.round(pesoKg)} <span class="text-xl">kg</span>`;
+            arrobaDisplay.innerText = `${arrobas.toFixed(1)} @`;
+        }
+
+        // Eventos
+        depthSlider.addEventListener('input', calculateWeight);
+        
+        btnRequestPermission.addEventListener('click', () => {
+            initCamera();
+        });
+
+        btnCameraFlip.addEventListener('click', () => {
+            useFrontCamera = !useFrontCamera;
+            initCamera();
+        });
+
+        window.addEventListener('load', () => {
+            // Tenta iniciar silenciosamente, se falhar o botão estará lá
+            initCamera();
+            calculateWeight();
+        });
+    </script>
+</body>
+</html>
